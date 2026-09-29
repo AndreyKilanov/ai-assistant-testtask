@@ -203,7 +203,6 @@ class ChatMessage(Base):
         edited: Менеджер изменил текст подсказки перед отправкой.
         auto: Ответ отправил бот в режиме «менеджер ушёл», а не менеджер.
         links: Кнопки-ссылки на страницы сайта под сообщением бота: список ``{title, url}``.
-        links: Кнопки-ссылки на страницы сайта под сообщением бота: список ``{title, url}``.
     """
 
     __tablename__ = "chat_messages"
@@ -217,6 +216,5 @@ class ChatMessage(Base):
     suggestion_state: Mapped[str | None] = mapped_column(String(10))
     edited: Mapped[bool] = mapped_column(default=False)
     auto: Mapped[bool] = mapped_column(default=False, server_default=false())
-    links: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     links: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
