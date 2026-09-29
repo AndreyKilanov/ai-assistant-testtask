@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 LLM_TIMEOUT_SECONDS = 45
 LLM_MAX_TOKENS = 1000
 LLM_TEMPERATURE = 0.4
-LLM_MAX_RETRIES = 3
+LLM_MAX_RETRIES = 1
 
 Chain = tuple[str, Any]
 RETRY_RE = re.compile(r"try again in\s+(?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?", re.IGNORECASE)

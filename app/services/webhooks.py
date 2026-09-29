@@ -1,9 +1,10 @@
 """Обработка вебхуков AmoCRM: приём с идемпотентностью и фоновая подготовка подсказки для менеджера."""
 
+import asyncio
 import logging
 from typing import Literal
 
-from app.core.errors import LlmUnavailable, QueueUnavailable
+from app.core.errors import LlmUnavailable, QueueUnavailable, RateLimitExceeded
 from app.core.metrics import WEBHOOK_EVENTS
 from app.domain.ports import Assistant, CrmClient, JobQueue, WebhookEventStore
 from app.schemas.analyze import AnalyzeRequest, AnalyzeResponse
@@ -90,11 +91,13 @@ class WebhookService:
 
         Args:
             event_id: Идентификатор события.
-            final_attempt: Последняя попытка: при недоступности модели событие получает статус ``failed``,
-                иначе ``retry`` (и исключение перехватывает механизм повторов очереди).
+            final_attempt: Последняя попытка: при недоступности модели, исчерпанном бюджете или прерывании по времени
+                событие получает статус ``failed``, иначе ``retry`` (и исключение перехватывает механизм повторов
+                очереди).
 
         Raises:
             LlmUnavailable: Модель недоступна.
+            RateLimitExceeded: Исчерпан дневной бюджет обращений к модели.
         """
         event = await self.events.get(event_id)
         if event is None or event.status == "processed":
@@ -104,8 +107,14 @@ class WebhookService:
         try:
             response = await self.assistant.analyze(request)
             await self.crm.add_note(payload.lead_id, format_crm_note(response))
-        except LlmUnavailable as exc:
+        except (LlmUnavailable, RateLimitExceeded) as exc:
             await self.events.set_status(event_id, "failed" if final_attempt else "retry", str(exc))
+            WEBHOOK_EVENTS.labels("failed" if final_attempt else "retry").inc()
+            raise
+        except asyncio.CancelledError:
+            await self.events.set_status(
+                event_id, "failed" if final_attempt else "retry", "Обработка прервана: истекло время задачи"
+            )
             WEBHOOK_EVENTS.labels("failed" if final_attempt else "retry").inc()
             raise
         except Exception as exc:

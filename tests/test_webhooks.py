@@ -1,6 +1,8 @@
+import asyncio
+
 import pytest
 
-from app.core.errors import LlmUnavailable, QueueUnavailable
+from app.core.errors import LlmUnavailable, QueueUnavailable, RateLimitExceeded
 from app.schemas.webhook import AmoWebhookPayload
 from app.services.webhooks import WebhookService, format_crm_note
 from tests.fakes import FailingAssistant, FakeAssistant, FakeCrm, FakeEvents, FakeQueue, make_response
@@ -98,3 +100,35 @@ async def test_format_crm_note_lists_used_sources_and_warnings() -> None:
     note = format_crm_note(response)
 
     assert "Ответ клиенту" in note and "Источники: Цеолит Макс" in note and "Внимание: Числа" in note
+
+
+class RaisingAssistant:
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+    async def analyze(self, request):
+        raise self.error
+
+
+async def test_exhausted_daily_budget_marks_retry_then_failed_on_last_attempt() -> None:
+    budget = RateLimitExceeded("daily", 3600, "Достигнут дневной лимит обращений к модели")
+    service, events, *_ = await make_service(assistant=RaisingAssistant(budget))
+    await service.accept(PAYLOAD)
+
+    with pytest.raises(RateLimitExceeded):
+        await service.process("evt-1", final_attempt=False)
+    assert events.records["evt-1"].status == "retry"
+
+    with pytest.raises(RateLimitExceeded):
+        await service.process("evt-1", final_attempt=True)
+    assert events.records["evt-1"].status == "failed"
+
+
+async def test_cancelled_processing_does_not_leave_the_event_in_received_status() -> None:
+    service, events, *_ = await make_service(assistant=RaisingAssistant(asyncio.CancelledError()))
+    await service.accept(PAYLOAD)
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.process("evt-1", final_attempt=True)
+
+    assert events.records["evt-1"].status == "failed" and "время" in events.errors["evt-1"]
