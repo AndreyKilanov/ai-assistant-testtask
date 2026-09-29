@@ -1,0 +1,15 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.fastembed_cache/
+data/raw/
+*.egg-info/
+dev-logs/
+scripts/crawl_site.py
+scripts/build_kb.py
+data/drafts_products.json
+data/kb_overrides.json
+tests/test_build_kb.py

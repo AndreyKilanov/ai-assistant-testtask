@@ -1,0 +1,56 @@
+[
+  {
+    "id": "delivery-payment",
+    "title": "Доставка и оплата",
+    "url": "https://o-complex.com/dostavka-i-oplata/",
+    "keywords": ["оплат", "платить", "платёж", "платеж", "сбп", "сберпэй", "картой", "наличн", "доставк", "отправк", "сдэк", "курьер", "самовывоз", "пункт выдачи", "трек"]
+  },
+  {
+    "id": "catalog",
+    "title": "Каталог на сайте",
+    "url": "https://o-complex.com/katalog/",
+    "keywords": ["каталог", "ассортимент", "продукц", "весь набор", "все наборы"]
+  },
+  {
+    "id": "contacts",
+    "title": "Контакты",
+    "url": "https://o-complex.com/kontakty/",
+    "keywords": ["контакт", "телефон", "адрес", "как добраться", "где находитесь", "почта", "email", "мессенджер"]
+  },
+  {
+    "id": "certificates",
+    "title": "Сертификаты",
+    "url": "https://o-complex.com/certificates/",
+    "keywords": ["сертификат", "декларац", "разрешени", "документы на"]
+  },
+  {
+    "id": "instructions",
+    "title": "Инструкции по применению",
+    "url": "https://o-complex.com/instrukcii/",
+    "keywords": ["инструкц", "как принимать", "как применять", "как пользоваться", "как пить", "как употреблять"]
+  },
+  {
+    "id": "about",
+    "title": "О компании",
+    "url": "https://o-complex.com/o-nas/",
+    "keywords": ["о компании", "о вас", "кто вы", "о нас", "история компании", "чем занимаетесь"]
+  },
+  {
+    "id": "why-us",
+    "title": "Почему выбирают нас",
+    "url": "https://o-complex.com/prichiny-vybrat-nas/",
+    "keywords": ["почему выбрать", "почему вы", "преимуществ", "чем лучше"]
+  },
+  {
+    "id": "wholesale",
+    "title": "Оптовое сотрудничество",
+    "url": "https://o-complex.com/optovoye-sotrudnichestvo/",
+    "keywords": ["оптом", "оптов", "дилер", "перепродаж"]
+  },
+  {
+    "id": "partners",
+    "title": "Партнёрам и блогерам",
+    "url": "https://o-complex.com/partners/",
+    "keywords": ["партнёр", "партнер", "блогер", "сотрудничеств", "реферал"]
+  }
+]

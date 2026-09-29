@@ -1,0 +1,102 @@
+/* Экран клиента: чат по центру, способы связи сбоку, форма запроса связи */
+.client-page .topbar { padding-inline: max(24px, calc((100% - 1100px) / 2 + 24px)); }
+.client-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; max-width: 1100px; margin: 0 auto; padding: 20px 24px 32px; }
+.client-chat { height: calc(100vh - 118px); min-height: 560px; }
+.client-side { display: flex; flex-direction: column; gap: 16px; align-self: start; position: sticky; top: 84px; }
+.card-head h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+.head-actions { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.head-actions .sub { text-align: right; }
+
+.msg.me { align-self: flex-end; flex-direction: row-reverse; }
+.msg.me .msg-body { align-items: flex-end; }
+.msg.me .bubble { background: var(--lime); color: var(--lime-ink); border-radius: 18px 18px 6px 18px; }
+.msg.them { align-self: flex-start; }
+.msg.them .bubble { background: var(--surface-2); border: 1px solid var(--line); border-radius: 18px 18px 18px 6px; }
+.msg.them .avatar { background: var(--btn); color: var(--btn-ink); }
+.msg.brand-hello .avatar { background: var(--lime); color: var(--lime-ink); }
+.msg .who { font-size: 12px; color: var(--muted); padding: 0 6px; }
+.sys { align-self: center; max-width: 92%; text-align: center; font-size: 13px; color: var(--ink-2); background: var(--blue-soft); border-radius: 999px; padding: 5px 14px; }
+.sys.warn { background: var(--orange-soft); color: var(--orange-ink); }
+
+.quick-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px 10px; }
+.quick-row button { cursor: pointer; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); border-radius: 999px; padding: 6px 13px; font-size: 14px; }
+.quick-row button:hover { border-color: var(--btn); color: var(--ink); }
+.quick-row:empty { display: none; }
+
+.side-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.side-card h2 { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; margin: 0; }
+.contact-list { display: grid; gap: 4px; }
+.contact-list a { display: flex; gap: 12px; align-items: center; padding: 8px 10px; border-radius: 12px; text-decoration: none; color: var(--ink); }
+.contact-list a:hover { background: var(--surface-2); }
+.contact-list a.static { cursor: default; }
+.contact-list a.static:hover { background: transparent; }
+.contact-list svg.icon { width: 20px; height: 20px; color: var(--muted); }
+.contact-list b { display: block; font-weight: 500; font-size: 14px; }
+.contact-list small { color: var(--muted); font-size: 12px; }
+.address { color: var(--muted); font-size: 13px; padding: 0 10px; }
+.privacy { color: var(--muted); font-size: 12px; padding: 0 6px; }
+.callback-ok { display: flex; gap: 10px; align-items: flex-start; color: var(--green); font-weight: 500; }
+.callback-ok svg.icon { width: 20px; height: 20px; margin-top: 2px; }
+.callback-ok + p { color: var(--ink-2); font-size: 14px; }
+
+/* Форма запроса связи */
+dialog { border: 1px solid var(--line); border-radius: var(--radius); padding: 0; width: min(520px, calc(100vw - 32px)); background: var(--surface); color: var(--ink); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28); }
+dialog::backdrop { background: rgba(20, 20, 20, 0.5); backdrop-filter: blur(3px); }
+dialog form { padding: 20px 22px 22px; display: flex; flex-direction: column; gap: 14px; }
+.dialog-head { display: flex; justify-content: space-between; align-items: center; }
+.dialog-head h2 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+.dialog-lead { color: var(--ink-2); font-size: 14px; margin-top: -6px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+.method { position: relative; }
+.method input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.method span { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 8px; border: 1px solid var(--line-strong); border-radius: 12px; font-size: 14px; font-weight: 500; color: var(--ink-2); text-align: center; background: var(--surface); }
+.method input:checked + span { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
+.method input:focus-visible + span { outline: 3px solid var(--btn); outline-offset: 2px; }
+.form-error { background: var(--red-soft); color: var(--red-ink); border: 1px solid var(--red-line); border-radius: 12px; padding: 9px 12px; font-size: 14px; }
+
+/* Ожидание ответа: бот готовит ответ или нужно дождаться менеджера */
+.msg.pending .bubble { color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
+.msg.pending .avatar { opacity: 0.7; }
+.dots { display: inline-flex; gap: 3px; }
+.dots i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: dot-bounce 1.2s infinite ease-in-out; }
+.dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dot-bounce { 0%, 60%, 100% { opacity: 0.25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .dots i { animation: none; opacity: 0.6; } }
+
+@media (max-width: 900px) {
+  .client-layout { grid-template-columns: 1fr; padding: 16px; }
+  .client-chat { height: 72vh; }
+  .client-side { position: static; }
+  .topbar { position: static; }
+  .client-page .topbar { padding-inline: 16px; }
+  .composer-foot .kbd-hint { display: none; }
+}
+@media (max-width: 520px) {
+  .composer { flex-wrap: wrap; }
+  .composer .primary { width: 100%; justify-content: center; }
+  #open-contact span { display: none; }
+}
+
+/* Контакты «гармошкой» */
+.acc { border-top: 1px solid var(--line); }
+.acc:first-of-type { border-top: 0; }
+.acc summary { display: flex; align-items: center; gap: 10px; padding: 12px 4px; cursor: pointer; list-style: none; font-weight: 500; user-select: none; }
+.acc summary::-webkit-details-marker { display: none; }
+.acc summary small { margin-left: auto; color: var(--muted); font-size: 12px; }
+.acc summary::after { content: ""; width: 7px; height: 7px; margin: -3px 4px 0 0; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform 0.2s; }
+.acc[open] summary::after { transform: rotate(225deg); margin-top: 3px; }
+.acc summary:hover { color: var(--ink); }
+.acc summary:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; border-radius: 8px; }
+.acc .contact-list { padding-bottom: 8px; }
+@media (prefers-reduced-motion: no-preference) { .acc[open] .contact-list { animation: acc-open 0.2s ease-out; } }
+@keyframes acc-open { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* Кнопки выбора способа связи под ответом бота */
+.quick-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.quick-actions button { cursor: pointer; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); border-radius: 999px; padding: 6px 14px; font-size: 14px; font-weight: 500; }
+.quick-actions button:hover { border-color: var(--btn); color: var(--ink); }
+.link-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 14px; font-size: 14px; font-weight: 500; text-decoration: none; }
+.link-btn:hover { border-color: var(--btn); }
+.link-btn svg.icon { width: 14px; height: 14px; opacity: 0.7; }
