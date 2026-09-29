@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.bootstrap import Container
 from app.core.config import Settings
+from app.integrations.away.memory import InMemoryAwayMode
 from app.integrations.ratelimit.memory import InMemoryRateLimiter
 from app.main import create_app
 from app.services.assistant import AssistantService
@@ -58,7 +59,7 @@ def make_container(
         feedback=FeedbackService(FakeFeedbackStore({1, 2, 3})),
         stats=FakeStats(),
         conversations=ConversationService(
-            FakeConversationStore(), FakeSuggestionReader(suggestion_store), assistant, crm
+            FakeConversationStore(), FakeSuggestionReader(suggestion_store), assistant, crm, InMemoryAwayMode()
         ),
     )
     return container, queue, crm
@@ -251,11 +252,12 @@ def test_ai_and_manager_endpoints_require_manager_token() -> None:
             anonymous.get("/api/stats"),
             anonymous.get("/api/manager/conversations"),
             anonymous.get("/api/manager/session"),
+            anonymous.get("/metrics"),
         ]
         wrong = anonymous.get("/api/manager/session", headers={"X-Manager-Token": "wrong"})
         allowed = anonymous.get("/api/manager/session", headers=MANAGER_HEADERS)
 
-    assert [r.status_code for r in checks] == [401] * 5
+    assert [r.status_code for r in checks] == [401] * 6
     assert wrong.status_code == 401 and allowed.status_code == 200
 
 
@@ -428,3 +430,42 @@ def test_turning_bot_on_answers_client_who_was_waiting_for_the_manager() -> None
 
     assert [m["sender"] for m in before] == ["client"]
     assert [(m["sender"], m["auto"]) for m in after] == [("client", False), ("manager", True)]
+
+
+def test_new_conversations_are_limited_per_ip() -> None:
+    with make_client(client_new_conversations_per_hour=2) as client:
+        responses = [client.post("/api/chat/conversations", json={}) for _ in range(3)]
+
+    assert [r.status_code for r in responses] == [201, 201, 429]
+    assert int(responses[2].headers["retry-after"]) >= 1
+
+
+def test_daily_message_limit_is_per_ip_and_counts_the_first_message() -> None:
+    with make_client(client_daily_messages_per_ip=2) as client:
+        token = client.post("/api/chat/conversations", json={"text": "Привет"}).json()["token"]
+        codes = [
+            client.post(f"/api/chat/conversations/{token}/messages", json={"text": "вопрос"}).status_code
+            for _ in range(2)
+        ]
+
+    assert codes == [201, 429]
+
+
+def test_inbox_limit_reports_has_more() -> None:
+    with make_client() as client:
+        for name in ("Иван", "Мария", "Пётр"):
+            client.post("/api/chat/conversations", json={"client_name": name, "text": "Здравствуйте"})
+        page = client.get("/api/manager/conversations?limit=2").json()
+        full = client.get("/api/manager/conversations").json()
+        too_big = client.get("/api/manager/conversations?limit=100000")
+
+    assert len(page["items"]) == 2 and page["has_more"] is True and page["total"] == 3
+    assert len(full["items"]) == 3 and full["has_more"] is False and too_big.status_code == 422
+
+
+def test_swagger_is_available_only_in_demo_mode() -> None:
+    for demo in (False, True):
+        with make_client(demo_mode=demo) as client:
+            docs, schema = client.get("/docs"), client.get("/openapi.json")
+
+        assert (docs.status_code, schema.status_code) == ((200, 200) if demo else (404, 404))

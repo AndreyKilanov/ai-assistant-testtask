@@ -206,7 +206,10 @@ class ChatMessage(Base):
     """
 
     __tablename__ = "chat_messages"
-    __table_args__ = (Index("ix_chat_messages_conversation", "conversation_id", "id"),)
+    __table_args__ = (
+        Index("ix_chat_messages_conversation", "conversation_id", "id"),
+        Index("ix_chat_messages_created_at", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))

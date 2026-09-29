@@ -20,9 +20,11 @@ def create_app(container: Container | None = None) -> FastAPI:
         container: Готовый контейнер зависимостей (для тестов); если не передан, собирается при старте.
 
     Returns:
-        Настроенный экземпляр FastAPI с подключёнными роутами.
+        Настроенный экземпляр FastAPI с подключёнными роутами; Swagger (``/docs``) доступен только в демо-режиме.
     """
     setup_logging()
+    settings = container.settings if container else get_settings()
+    docs = {} if settings.demo_mode else {"docs_url": None, "redoc_url": None, "openapi_url": None}
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -31,7 +33,7 @@ def create_app(container: Container | None = None) -> FastAPI:
         if container is None:
             await application.state.container.aclose()
 
-    application = FastAPI(title="AmoCRM AI Assistant", version=__version__, lifespan=lifespan)
+    application = FastAPI(title="AmoCRM AI Assistant", version=__version__, lifespan=lifespan, **docs)
     register_exception_handlers(application)
     routers = (
         ui.router,

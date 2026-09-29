@@ -1,5 +1,6 @@
-"""Порты диалогов: хранилище диалогов и сообщений, чтение сохранённых подсказок."""
+"""Порты диалогов: хранилище диалогов и сообщений, чтение сохранённых подсказок, режим «менеджер ушёл»."""
 
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Protocol
 
@@ -64,30 +65,36 @@ class ConversationStore(Protocol):
         sender: str,
         text: str,
         *,
-        status: str | None = None,
+        status: str | Callable[[str], str] | None = None,
         unread_delta: int = 0,
         suggestion_id: int | None = None,
         suggestion_state: str | None = None,
         edited: bool = False,
         auto: bool = False,
         links: list[dict[str, str]] | None = None,
+        update_fields: Mapping[str, object] | None = None,
     ) -> MessageRecord:
-        """Добавляет сообщение и обновляет диалог (превью, время, непрочитанные, статус).
+        """Добавляет сообщение и обновляет диалог (превью, время, непрочитанные, статус) в одной транзакции.
 
         Args:
             conversation_id: Диалог.
             sender: client, manager или system.
             text: Текст.
-            status: Новый статус диалога (None — не менять).
+            status: Новый статус диалога или функция от текущего статуса (вычисляется под блокировкой строки, поэтому
+                не расходится с параллельной сменой статуса); None — не менять.
             unread_delta: На сколько увеличить число непрочитанных менеджером.
             suggestion_id: Связанная подсказка ИИ.
             suggestion_state: Состояние подсказки для сообщения клиента.
             edited: Менеджер изменил подсказку перед отправкой.
             auto: Ответ отправил бот в режиме «менеджер ушёл».
             links: Кнопки-ссылки на страницы сайта.
+            update_fields: Дополнительные поля диалога, которые меняются в той же транзакции.
 
         Returns:
             Созданное сообщение.
+
+        Raises:
+            ConversationNotFound: Диалога нет.
         """
         ...
 
@@ -102,12 +109,16 @@ class ConversationStore(Protocol):
         """
         ...
 
-    async def list_messages(self, conversation_id: int, after_id: int = 0) -> list[MessageRecord]:
-        """Возвращает сообщения диалога с идентификатором больше ``after_id``.
+    async def list_messages(
+        self, conversation_id: int, after_id: int = 0, *, before_id: int | None = None, limit: int | None = None
+    ) -> list[MessageRecord]:
+        """Возвращает сообщения диалога с идентификатором больше ``after_id`` и меньше ``before_id``.
 
         Args:
             conversation_id: Диалог.
             after_id: Последний уже известный идентификатор.
+            before_id: Верхняя граница идентификатора (не включая); None — без границы.
+            limit: Сколько последних сообщений из выборки вернуть; None — все.
 
         Returns:
             Сообщения по возрастанию идентификатора.
@@ -135,6 +146,19 @@ class ConversationStore(Protocol):
         Args:
             conversation_id: Диалог.
             **fields: Поля для обновления.
+
+        Returns:
+            Обновлённый диалог или None, если его нет.
+        """
+        ...
+
+    async def mark_opened(self, conversation_id: int) -> ConversationRecord | None:
+        """Отмечает диалог открытым менеджером: сбрасывает непрочитанные, новый диалог берёт в работу.
+
+        Действует под блокировкой строки: сообщение клиента, пришедшее одновременно, не теряется из счётчика.
+
+        Args:
+            conversation_id: Диалог.
 
         Returns:
             Обновлённый диалог или None, если его нет.

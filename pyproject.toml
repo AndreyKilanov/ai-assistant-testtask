@@ -29,6 +29,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
+    "import-linter>=2.0",
 ]
 
 [tool.ruff]
@@ -49,3 +50,57 @@ convention = "google"
 asyncio_mode = "auto"
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Domain is pure"
+type = "forbidden"
+source_modules = ["app.domain"]
+forbidden_modules = [
+    "app.db",
+    "app.services",
+    "app.integrations",
+    "app.api",
+    "app.bootstrap",
+    "app.workers",
+    "sqlalchemy",
+    "fastapi",
+    "redis",
+    "arq",
+    "groq",
+    "langchain_core",
+    "llama_index",
+]
+
+[[tool.importlinter.contracts]]
+name = "Services depend on ports, not on adapters or infrastructure"
+type = "forbidden"
+source_modules = ["app.services"]
+forbidden_modules = [
+    "app.db",
+    "app.integrations",
+    "app.api",
+    "app.bootstrap",
+    "app.workers",
+    "sqlalchemy",
+    "redis",
+    "arq",
+    "groq",
+    "langchain_core",
+    "llama_index",
+    "fastapi",
+]
+
+[[tool.importlinter.contracts]]
+name = "Adapters do not depend on scenarios or HTTP"
+type = "forbidden"
+source_modules = ["app.db", "app.integrations"]
+forbidden_modules = ["app.services", "app.api", "app.bootstrap", "app.workers"]
+
+[[tool.importlinter.contracts]]
+name = "Layers"
+type = "layers"
+layers = ["app.api", "app.services", "app.domain"]

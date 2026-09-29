@@ -23,6 +23,7 @@ const TOKEN_KEY = "oc-manager-token";
 const CLIENT_TOKEN_KEY = "oc-client-token";
 const SELECTED_KEY = "oc-manager-selected";
 const MANAGER_ID = "demo-manager";
+const LIST_PAGE = 100;
 const COUNTER_FROM = 1500;
 const MAX_LENGTH = 2000;
 const CATEGORY_LABELS = {
@@ -75,6 +76,7 @@ const state = {
   token: sessionGet(),
   filter: null,
   query: "",
+  listLimit: LIST_PAGE,
   list: null,
   selectedId: null,
   detail: null,
@@ -169,6 +171,7 @@ async function refreshList() {
   const params = new URLSearchParams();
   if (state.filter) params.set("status", state.filter);
   if (state.query) params.set("q", state.query);
+  params.set("limit", String(state.listLimit));
   const data = await managerApi(`/api/manager/conversations?${params}`).catch(() => null);
   if (!data) return;
   state.list = data;
@@ -206,6 +209,7 @@ function renderInbox() {
           "aria-pressed": String(state.filter === value),
           onclick: () => {
             state.filter = value;
+            state.listLimit = LIST_PAGE;
             refreshList();
           },
         },
@@ -218,6 +222,24 @@ function renderInbox() {
     setChildren(els.list, h("li", { class: "list-empty", text: state.query || state.filter ? "Ничего не найдено" : "Пока нет обращений. Откройте главную страницу и напишите как клиент." }));
     return;
   }
+  const more = state.list.has_more
+    ? h(
+        "li",
+        {},
+        h(
+          "button",
+          {
+            type: "button",
+            class: "load-more",
+            onclick: () => {
+              state.listLimit += LIST_PAGE;
+              refreshList();
+            },
+          },
+          "Показать ещё",
+        ),
+      )
+    : null;
   setChildren(
     els.list,
     items.map((item) => {
@@ -245,6 +267,7 @@ function renderInbox() {
         ),
       );
     }),
+    more,
   );
 }
 
@@ -927,6 +950,7 @@ els.awayOff.addEventListener("click", () => setAway(false));
 els.awayOn.addEventListener("click", () => setAway(true));
 els.search.addEventListener("input", () => {
   state.query = els.search.value.trim();
+  state.listLimit = LIST_PAGE;
   refreshList();
 });
 els.composer.addEventListener("submit", async (event) => {

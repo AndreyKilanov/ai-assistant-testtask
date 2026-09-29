@@ -1,13 +1,15 @@
 """Репозиторий диалогов и сообщений (таблицы ``conversations`` и ``chat_messages``)."""
 
 import uuid
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
 from sqlalchemy import and_, case, func, or_, select, update
 
+from app.core.errors import ConversationNotFound
 from app.db.models import ChatMessage, Conversation
-from app.db.repositories import Sessionmaker
-from app.domain.conversations import NEEDS_ATTENTION, ConversationRecord, MessageRecord
+from app.db.session import Sessionmaker
+from app.domain.conversations import NEEDS_ATTENTION, ConversationRecord, MessageRecord, status_after_open
 
 PREVIEW_CHARS = 160
 
@@ -134,13 +136,14 @@ class ConversationRepository:
         sender: str,
         text: str,
         *,
-        status: str | None = None,
+        status: str | Callable[[str], str] | None = None,
         unread_delta: int = 0,
         suggestion_id: int | None = None,
         suggestion_state: str | None = None,
         edited: bool = False,
         auto: bool = False,
         links: list[dict[str, str]] | None = None,
+        update_fields: Mapping[str, object] | None = None,
     ) -> MessageRecord:
         """Добавляет сообщение и обновляет превью, время, непрочитанные и статус диалога в одной транзакции.
 
@@ -148,20 +151,31 @@ class ConversationRepository:
             conversation_id: Диалог.
             sender: client, manager или system.
             text: Текст.
-            status: Новый статус диалога (None — не менять).
+            status: Новый статус диалога или функция от текущего статуса (вычисляется под блокировкой строки);
+                None — не менять.
             unread_delta: На сколько увеличить число непрочитанных менеджером.
             suggestion_id: Связанная подсказка ИИ.
             suggestion_state: Состояние подсказки для сообщения клиента.
             edited: Менеджер изменил подсказку перед отправкой.
             auto: Ответ отправил бот в режиме «менеджер ушёл».
             links: Кнопки-ссылки на страницы сайта.
+            update_fields: Дополнительные поля диалога, которые меняются в той же транзакции.
 
         Returns:
             Созданное сообщение.
+
+        Raises:
+            ConversationNotFound: Диалога нет.
         """
         now = datetime.now(UTC)
         async with self.sessionmaker() as session, session.begin():
             conversation = await session.get(Conversation, conversation_id, with_for_update=True)
+            if conversation is None:
+                raise ConversationNotFound("Диалог не найден")
+            if callable(status):
+                status = status(conversation.status)
+            for name, value in (update_fields or {}).items():
+                setattr(conversation, name, value)
             message = ChatMessage(
                 conversation_id=conversation_id,
                 sender=sender,
@@ -199,23 +213,30 @@ class ConversationRepository:
             row = await session.get(ChatMessage, message_id)
             return None if row is None else message_record(row)
 
-    async def list_messages(self, conversation_id: int, after_id: int = 0) -> list[MessageRecord]:
-        """Возвращает сообщения диалога с идентификатором больше ``after_id``.
+    async def list_messages(
+        self, conversation_id: int, after_id: int = 0, *, before_id: int | None = None, limit: int | None = None
+    ) -> list[MessageRecord]:
+        """Возвращает сообщения диалога с идентификатором больше ``after_id`` и меньше ``before_id``.
 
         Args:
             conversation_id: Диалог.
             after_id: Последний уже известный идентификатор.
+            before_id: Верхняя граница идентификатора (не включая); None — без границы.
+            limit: Сколько последних сообщений из выборки вернуть; None — все.
 
         Returns:
             Сообщения по возрастанию идентификатора.
         """
-        stmt = (
-            select(ChatMessage)
-            .where(ChatMessage.conversation_id == conversation_id, ChatMessage.id > after_id)
-            .order_by(ChatMessage.id)
-        )
+        stmt = select(ChatMessage).where(ChatMessage.conversation_id == conversation_id, ChatMessage.id > after_id)
+        if before_id is not None:
+            stmt = stmt.where(ChatMessage.id < before_id)
+        if limit is None:
+            stmt = stmt.order_by(ChatMessage.id)
+        else:
+            stmt = stmt.order_by(ChatMessage.id.desc()).limit(limit)
         async with self.sessionmaker() as session:
-            return [message_record(row) for row in (await session.execute(stmt)).scalars()]
+            rows = [message_record(row) for row in (await session.execute(stmt)).scalars()]
+        return rows if limit is None else rows[::-1]
 
     async def list_conversations(
         self, status: str | None, query: str | None, limit: int
@@ -271,6 +292,29 @@ class ConversationRepository:
             await session.flush()
             return conversation_record(row)
 
+    async def mark_opened(self, conversation_id: int) -> ConversationRecord | None:
+        """Отмечает диалог открытым менеджером: сбрасывает непрочитанные, новый диалог берёт в работу.
+
+        Действует под блокировкой строки: сообщение клиента, пришедшее одновременно, не теряется из счётчика.
+
+        Args:
+            conversation_id: Диалог.
+
+        Returns:
+            Обновлённый диалог или None, если его нет.
+        """
+        async with self.sessionmaker() as session, session.begin():
+            row = await session.get(Conversation, conversation_id, with_for_update=True)
+            if row is None:
+                return None
+            opened_status = status_after_open(row.status)
+            if row.unread_by_manager or opened_status != row.status:
+                row.unread_by_manager = 0
+                row.status = opened_status
+                row.updated_at = datetime.now(UTC)
+            await session.flush()
+            return conversation_record(row)
+
     async def set_message_suggestion(self, message_id: int, suggestion_id: int | None, state: str) -> None:
         """Привязывает подсказку к сообщению клиента.
 
@@ -319,7 +363,7 @@ class ConversationRepository:
         """
         last = (
             select(func.max(ChatMessage.id).label("message_id"))
-            .where(ChatMessage.sender.in_(("client", "manager")))
+            .where(ChatMessage.sender.in_(("client", "manager")), ChatMessage.created_at >= since)
             .group_by(ChatMessage.conversation_id)
             .subquery()
         )

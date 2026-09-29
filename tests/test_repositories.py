@@ -126,3 +126,97 @@ async def test_stats_count_cache_hits_tokens_and_feedback(sessionmaker: Sessionm
         assert after.daily_llm_limit == 500 and 0 <= after.cache_hit_ratio <= 1
     finally:
         await _cleanup(sessionmaker, miss_id, hit_id)
+
+
+async def _new_conversation(sessionmaker: Sessionmaker):
+    from app.db.repositories import ConversationRepository
+
+    repo = ConversationRepository(sessionmaker)
+    return repo, await repo.create("Тест репозитория")
+
+
+async def _drop_conversation(sessionmaker: Sessionmaker, conversation_id: int) -> None:
+    async with sessionmaker() as session:
+        await session.execute(text("delete from conversations where id = :i"), {"i": conversation_id})
+        await session.commit()
+
+
+async def test_add_message_applies_status_function_and_fields_in_one_transaction(sessionmaker: Sessionmaker) -> None:
+    from app.domain.conversations import status_after_client_message
+
+    repo, conversation = await _new_conversation(sessionmaker)
+    try:
+        await repo.update(conversation.id, status="in_progress")
+        await repo.add_message(conversation.id, "client", "ещё вопрос", status=status_after_client_message)
+        await repo.add_message(
+            conversation.id,
+            "system",
+            "запрос связи",
+            status="callback",
+            unread_delta=1,
+            update_fields={"contact_method": "phone", "contact_value": "+79000000000"},
+        )
+
+        stored = await repo.get(conversation.id)
+        assert stored is not None and stored.status == "callback" and stored.contact_value == "+79000000000"
+        assert stored.last_message_preview == "запрос связи"
+    finally:
+        await _drop_conversation(sessionmaker, conversation.id)
+
+
+async def test_add_message_to_missing_conversation_raises_not_found(sessionmaker: Sessionmaker) -> None:
+    from app.core.errors import ConversationNotFound
+    from app.db.repositories import ConversationRepository
+
+    with pytest.raises(ConversationNotFound):
+        await ConversationRepository(sessionmaker).add_message(999_999_999, "client", "привет")
+
+
+async def test_list_messages_limit_returns_the_latest_in_ascending_order(sessionmaker: Sessionmaker) -> None:
+    repo, conversation = await _new_conversation(sessionmaker)
+    try:
+        ids = [(await repo.add_message(conversation.id, "client", f"сообщение {n}")).id for n in range(5)]
+
+        latest = await repo.list_messages(conversation.id, limit=2)
+        before = await repo.list_messages(conversation.id, before_id=ids[3], limit=2)
+        after = await repo.list_messages(conversation.id, after_id=ids[1])
+
+        assert [m.id for m in latest] == ids[3:]
+        assert [m.id for m in before] == ids[1:3]
+        assert [m.id for m in after] == ids[2:]
+    finally:
+        await _drop_conversation(sessionmaker, conversation.id)
+
+
+async def test_mark_opened_resets_unread_and_takes_new_conversation_into_work(sessionmaker: Sessionmaker) -> None:
+    repo, conversation = await _new_conversation(sessionmaker)
+    try:
+        await repo.add_message(conversation.id, "client", "привет", unread_delta=1)
+
+        opened = await repo.mark_opened(conversation.id)
+
+        assert opened is not None and opened.unread_by_manager == 0 and opened.status == "in_progress"
+        assert await repo.mark_opened(999_999_999) is None
+    finally:
+        await _drop_conversation(sessionmaker, conversation.id)
+
+
+async def test_unanswered_client_messages_ignores_old_and_answered_conversations(sessionmaker: Sessionmaker) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    repo, waiting = await _new_conversation(sessionmaker)
+    _, answered = await _new_conversation(sessionmaker)
+    try:
+        waiting_message = await repo.add_message(waiting.id, "client", "жду ответа")
+        await repo.add_message(answered.id, "client", "вопрос")
+        await repo.add_message(answered.id, "manager", "ответ")
+
+        recent = await repo.unanswered_client_messages(datetime.now(UTC) - timedelta(hours=1), 100)
+        future = await repo.unanswered_client_messages(datetime.now(UTC) + timedelta(hours=1), 100)
+
+        assert (waiting.id, waiting_message.id) in recent
+        assert all(conversation_id != answered.id for conversation_id, _ in recent)
+        assert future == []
+    finally:
+        await _drop_conversation(sessionmaker, waiting.id)
+        await _drop_conversation(sessionmaker, answered.id)

@@ -2,8 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.errors import LlmUnavailable, RateLimitExceeded
+from app.integrations.llm.health import LlmHealth
 from app.schemas.analyze import AnalyzeRequest
-from app.services.llm_health import LlmHealth
 from app.services.metering import MeteredAssistant
 from tests.fakes import FailingAssistant, FakeAssistant, make_response
 from tests.test_api import MANAGER_HEADERS, make_client

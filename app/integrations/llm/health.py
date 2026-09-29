@@ -106,7 +106,8 @@ class LlmHealth:
         Args:
             state: ``rate_limit``, ``budget`` или ``unavailable``.
         """
-        await self._write({"state": state if state in FAILURE_STATES else "unavailable", "at": datetime.now(UTC).isoformat()})
+        state = state if state in FAILURE_STATES else "unavailable"
+        await self._write({"state": state, "at": datetime.now(UTC).isoformat()})
 
     async def record_model(self, model: str, state: str, retry_after: int | None = None) -> None:
         """Запоминает исход вызова конкретной модели.
