@@ -205,11 +205,13 @@ class ConversationListOut(BaseModel):
         items: Диалоги, требующие внимания выше остальных.
         counts: Число диалогов по статусам (без учёта фильтра).
         total: Всего диалогов.
+        has_more: В списке показаны не все диалоги, подходящие под фильтр (можно запросить больше).
     """
 
     items: list[ConversationSummary]
     counts: dict[str, int]
     total: int
+    has_more: bool = False
 
 
 class ClientCard(BaseModel):

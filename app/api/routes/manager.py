@@ -7,7 +7,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Qu
 from app.api.deps import get_container, require_manager
 from app.bootstrap import Container
 from app.schemas.analyze import AnalyzeResponse
-from app.schemas.stats import ModelChoiceIn, ModelStatus
 from app.schemas.chat import (
     AwayModeIn,
     AwayModeOut,
@@ -20,11 +19,13 @@ from app.schemas.chat import (
     NoteIn,
     StatusIn,
 )
-from app.services.conversations import to_manager_message, to_summary
+from app.schemas.stats import ModelChoiceIn, ModelStatus
+from app.services.conversations import LIST_LIMIT, to_manager_message, to_summary
 
 router = APIRouter(prefix="/api/manager", tags=["manager"], dependencies=[Depends(require_manager)])
 
 ConversationId = Annotated[int, Path(gt=0)]
+MAX_LIST_LIMIT = 500
 
 
 @router.get("/session")
@@ -38,9 +39,13 @@ async def list_conversations(
     container: Annotated[Container, Depends(get_container)],
     status_filter: Annotated[ConversationStatus | None, Query(alias="status")] = None,
     q: Annotated[str | None, Query(max_length=100)] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_LIST_LIMIT)] = LIST_LIMIT,
 ) -> ConversationListOut:
-    """Возвращает входящие: новые и просящие связаться выше остальных; фильтр по статусу и поиск по тексту."""
-    return await container.conversations.list_for_manager(status_filter, q)
+    """Возвращает входящие: новые и просящие связаться выше остальных; фильтр по статусу, поиск и размер выдачи.
+
+    Если диалогов больше ``limit``, в ответе ``has_more = true``: запросите больше.
+    """
+    return await container.conversations.list_for_manager(status_filter, q, limit)
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
@@ -99,7 +104,7 @@ async def get_away(container: Annotated[Container, Depends(get_container)]) -> A
 async def set_away(
     payload: AwayModeIn, background: BackgroundTasks, container: Annotated[Container, Depends(get_container)]
 ) -> AwayModeOut:
-    """Включает или выключает режим «менеджер ушёл»; при включении бот отвечает на сообщения, которые ждали менеджера."""
+    """Включает или выключает режим «менеджер ушёл»; при включении бот отвечает на сообщения, ждавшие менеджера."""
     await container.conversations.away.set_enabled(payload.enabled)
     if payload.enabled:
         background.add_task(container.conversations.answer_backlog)

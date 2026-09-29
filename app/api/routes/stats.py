@@ -18,7 +18,7 @@ async def stats(container: Annotated[Container, Depends(get_container)]) -> Stat
     return await container.stats.today()
 
 
-@router.get("/metrics", include_in_schema=False)
+@router.get("/metrics", include_in_schema=False, dependencies=[Depends(require_manager)])
 async def metrics() -> Response:
-    """Метрики Prometheus текущего процесса (порт опубликован только на localhost)."""
+    """Метрики Prometheus текущего процесса (нужен заголовок ``X-Manager-Token``)."""
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

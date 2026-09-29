@@ -2,10 +2,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.errors import ConversationNotFound, LlmUnavailable
+from app.integrations.away.memory import InMemoryAwayMode
 from app.schemas.analyze import AnalyzeRequest, AnalyzeResponse
 from app.schemas.chat import ContactRequestIn
-from app.integrations.away.memory import InMemoryAwayMode
-from app.services.links import CATALOG_URL, build_links
 from app.services.conversations import (
     CALLBACK_FOLLOW_UP_TEXT,
     CALLBACK_KNOWN_TEXT,
@@ -14,6 +13,7 @@ from app.services.conversations import (
     ConversationService,
     to_client_message,
 )
+from app.services.links import CATALOG_URL, build_links
 from tests.fake_conversations import FakeConversationStore, FakeSuggestionReader
 from tests.fakes import FailingAssistant, FakeCrm, make_response
 
@@ -37,7 +37,7 @@ class RecordingAssistantStub:
 async def make_service(assistant=None):
     store, reader, crm = FakeConversationStore(), FakeSuggestionReader(), FakeCrm()
     assistant = assistant or RecordingAssistantStub(await make_response(), reader)
-    return ConversationService(store, reader, assistant, crm), store, reader, crm, assistant
+    return ConversationService(store, reader, assistant, crm, InMemoryAwayMode()), store, reader, crm, assistant
 
 
 def contact(**overrides) -> ContactRequestIn:
@@ -484,3 +484,76 @@ async def test_hot_conversation_is_listed_above_newer_ones_and_closing_removes_t
 
     assert not store.conversations[hot.id].hot
     assert not any(item.hot for item in (await service.list_for_manager(None, None)).items)
+
+
+async def test_contact_request_is_one_write_and_survives_crm_failure() -> None:
+    service, store, *_ = await make_service()
+    service.crm = FakeCrm(fail=True)
+    conversation, _ = await service.start(None, "Хочу заказать")
+
+    updated = await service.request_contact(conversation.token, contact())
+
+    assert updated.status == "callback" and updated.contact_value == "@anna_test" and updated.client_name == "Анна"
+    assert [m.sender for m in store.messages] == ["client", "system"]
+
+
+async def test_detail_of_unknown_conversation_raises_not_found() -> None:
+    service, *_ = await make_service()
+
+    with pytest.raises(ConversationNotFound):
+        await service.detail(999)
+
+
+async def test_suggestion_history_is_capped_to_the_latest_turns() -> None:
+    from app.services.conversations import HISTORY_LIMIT
+
+    service, _, _, _, assistant = await make_service()
+    conversation, _ = await service.start(None, "сообщение 0")
+    for number in range(1, HISTORY_LIMIT + 10):
+        await service.manager_send(conversation.id, f"ответ {number}", None)
+    _, last = await service.client_send(conversation.token, "последний вопрос")
+
+    await service.generate_suggestion(conversation.id, last.id)
+
+    history = assistant.requests[-1].history
+    assert len(history) == HISTORY_LIMIT and history[-1].text == f"ответ {HISTORY_LIMIT + 9}"
+
+
+async def test_detail_and_poll_return_only_the_latest_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import conversations as module
+
+    monkeypatch.setattr(module, "DETAIL_MESSAGES_LIMIT", 2)
+    monkeypatch.setattr(module, "POLL_MESSAGES_LIMIT", 2)
+    service, *_ = await make_service()
+    conversation, _ = await service.start(None, "1")
+    for text in ("2", "3", "4"):
+        await service.client_send(conversation.token, text)
+
+    detail = await service.detail(conversation.id)
+    _, polled = await service.client_poll(conversation.token, 0)
+
+    assert [m.text for m in detail.messages] == ["3", "4"] and [m.text for m in polled] == ["3", "4"]
+
+
+async def test_list_reports_that_more_conversations_exist_than_the_limit() -> None:
+    service, *_ = await make_service()
+    for name in ("Иван", "Мария", "Пётр"):
+        await service.start(name, "Здравствуйте")
+
+    page = await service.list_for_manager(None, None, limit=2)
+    full = await service.list_for_manager(None, None)
+
+    assert len(page.items) == 2 and page.has_more is True and page.total == 3
+    assert len(full.items) == 3 and full.has_more is False
+
+
+async def test_status_callable_is_applied_to_the_stored_status() -> None:
+    from app.domain.conversations import status_after_client_message
+
+    service, store, *_ = await make_service()
+    conversation, _ = await service.start(None, "Привет")
+    await service.set_status(conversation.id, "in_progress")
+
+    await store.add_message(conversation.id, "client", "ещё", status=status_after_client_message)
+
+    assert store.conversations[conversation.id].status == "in_progress"

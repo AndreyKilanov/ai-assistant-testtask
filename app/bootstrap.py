@@ -13,8 +13,8 @@ from arq.connections import ArqRedis, RedisSettings
 from redis.asyncio import Redis
 
 from app.core.config import Settings
-from app.db.conversation_repository import ConversationRepository
 from app.db.repositories import (
+    ConversationRepository,
     FeedbackRepository,
     StatsRepository,
     SuggestionRepository,
@@ -27,6 +27,7 @@ from app.integrations.away.redis import RedisAwayMode
 from app.integrations.cache.redis import RedisResponseCache
 from app.integrations.crm.stub import StubCrmClient
 from app.integrations.llm.groq import GroqGenerator
+from app.integrations.llm.health import LlmHealth
 from app.integrations.llm.offline import OfflineGenerator
 from app.integrations.queue.arq_queue import ArqJobQueue
 from app.integrations.rag.index import KnowledgeIndex
@@ -36,7 +37,6 @@ from app.services.caching import CachingAssistant
 from app.services.conversations import ConversationService
 from app.services.feedback import FeedbackService
 from app.services.limits import BudgetedAssistant
-from app.services.llm_health import LlmHealth
 from app.services.metering import MeteredAssistant
 from app.services.recording import RecordingAssistant
 from app.services.webhooks import WebhookService

@@ -27,6 +27,9 @@ class Settings(BaseSettings):
         cache_history_turns: Сколько последних реплик диалога входит в ключ кеша.
         webhook_max_tries: Сколько раз worker пробует обработать вебхук при недоступности модели.
         client_rate_limit_per_minute: Сколько обращений в минуту допускается от одного лида (от IP — втрое больше).
+        client_new_conversations_per_hour: Сколько новых диалогов в час можно открыть с одного IP-адреса.
+        client_daily_messages_per_ip: Сколько сообщений клиента в сутки принимается с одного IP-адреса (каждое может
+            стоить запроса к модели, а бюджет модели общий).
         worker_metrics_port: Порт HTTP-сервера метрик Prometheus у worker'а.
         manager_token: Код доступа менеджера к консоли и ИИ-эндпоинтам (заголовок ``X-Manager-Token``).
         groq_extra_models: Дополнительные модели Groq через запятую: выбираются в консоли менеджера и служат запасными
@@ -54,6 +57,8 @@ class Settings(BaseSettings):
     cache_history_turns: int = 2
     webhook_max_tries: int = 3
     client_rate_limit_per_minute: int = 20
+    client_new_conversations_per_hour: int = 10
+    client_daily_messages_per_ip: int = 60
     worker_metrics_port: int = 9101
     manager_token: SecretStr = SecretStr("demo-manager")
     demo_mode: bool = False

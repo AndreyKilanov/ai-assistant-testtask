@@ -12,13 +12,14 @@ from prometheus_client import start_http_server
 
 from app.bootstrap import build_container
 from app.core.config import get_settings
-from app.core.errors import LlmUnavailable
+from app.core.errors import LlmUnavailable, RateLimitExceeded
 from app.core.logging import setup_logging
 
 logger = logging.getLogger(__name__)
 
 RETRY_BASE_SECONDS = 15
-JOB_TIMEOUT_SECONDS = 120
+# Не меньше худшего случая вызова модели: число моделей × (1 + LLM_MAX_RETRIES) × LLM_TIMEOUT_SECONDS (см. groq.py).
+JOB_TIMEOUT_SECONDS = 300
 MAX_PARALLEL_JOBS = 10
 
 
@@ -51,27 +52,29 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 async def process_webhook(ctx: dict[str, Any], event_id: str) -> None:
     """Готовит подсказку по событию вебхука и передаёт её в CRM.
 
-    При недоступности модели задача повторяется с нарастающей задержкой; после исчерпания попыток событие
-    получает статус ``failed``.
+    При недоступности модели задача повторяется с нарастающей задержкой, при исчерпанном дневном бюджете — когда он
+    освободится; после исчерпания попыток событие получает статус ``failed``.
 
     Args:
         ctx: Контекст arq (контейнер и номер попытки).
         event_id: Идентификатор события.
 
     Raises:
-        Retry: Модель недоступна и попытки ещё остались.
+        Retry: Модель недоступна или бюджет исчерпан, и попытки ещё остались.
         LlmUnavailable: Модель недоступна на последней попытке.
+        RateLimitExceeded: Бюджет исчерпан на последней попытке.
     """
     container = ctx["container"]
     attempt = ctx["job_try"]
     final = attempt >= container.settings.webhook_max_tries
     try:
         await container.webhooks.process(event_id, final_attempt=final)
-    except LlmUnavailable as exc:
+    except (LlmUnavailable, RateLimitExceeded) as exc:
         if final:
             raise
-        logger.warning("Событие %s: модель недоступна, повтор через %s с", event_id, RETRY_BASE_SECONDS * attempt)
-        raise Retry(defer=RETRY_BASE_SECONDS * attempt) from exc
+        delay = exc.retry_after if isinstance(exc, RateLimitExceeded) else RETRY_BASE_SECONDS * attempt
+        logger.warning("Событие %s: %s, повтор через %s с", event_id, exc, delay)
+        raise Retry(defer=delay) from exc
 
 
 class WorkerSettings:

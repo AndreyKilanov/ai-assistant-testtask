@@ -4,7 +4,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, Request, status
 
-from app.api.deps import enforce_client_rate_limit, get_container
+from app.api.deps import (
+    enforce_client_daily_limit,
+    enforce_client_rate_limit,
+    enforce_new_conversation_limit,
+    get_container,
+)
 from app.bootstrap import Container
 from app.schemas.chat import (
     ChatMessageOut,
@@ -31,6 +36,9 @@ async def start_conversation(
 ) -> ClientSessionOut:
     """Начинает диалог (с первым сообщением или без) и возвращает токен, по которому клиент вернётся в чат."""
     await enforce_client_rate_limit(request, container, None)
+    await enforce_new_conversation_limit(request, container)
+    if payload.text is not None:
+        await enforce_client_daily_limit(request, container)
     conversation, message = await container.conversations.start(payload.client_name, payload.text)
     if message is not None:
         background.add_task(container.conversations.process_client_message, conversation.id, message.id)
@@ -80,6 +88,7 @@ async def send_message(
 ) -> ChatMessageOut:
     """Принимает сообщение клиента; подсказка ИИ для менеджера (и автоответ, если менеджер ушёл) готовится в фоне."""
     await enforce_client_rate_limit(request, container, token)
+    await enforce_client_daily_limit(request, container)
     conversation, message = await container.conversations.client_send(token, payload.text)
     background.add_task(container.conversations.process_client_message, conversation.id, message.id)
     return to_client_message(message)

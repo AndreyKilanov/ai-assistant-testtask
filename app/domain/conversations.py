@@ -75,7 +75,6 @@ class MessageRecord:
     created_at: datetime
     auto: bool = False
     links: list[dict[str, str]] = field(default_factory=list)
-    links: list[dict[str, str]] = field(default_factory=list)
 
 
 def status_after_client_message(current: str) -> str:

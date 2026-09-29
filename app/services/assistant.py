@@ -75,7 +75,10 @@ class AssistantService:
         # Записей нет (приветствие, болтовня, непонятное сообщение): отвечаем как консультант без базы знаний,
         # а не передаём менеджеру. Тема здоровья остаётся на основном промпте с его проверками.
         no_match = use_rag and not context and not high_risk
-        prompt_name = "analyze_system_no_match" if no_match else ("analyze_system" if use_rag else "analyze_system_no_rag")
+        if no_match:
+            prompt_name = "analyze_system_no_match"
+        else:
+            prompt_name = "analyze_system" if use_rag else "analyze_system_no_rag"
         system = load_prompt(self.settings.prompt_version, prompt_name)
         user = build_user_message(request.message, request.history, None if no_match or not use_rag else context)
         output = await self.generator.generate(GenerationInput(system=system, user=user, hits=context))

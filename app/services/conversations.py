@@ -5,17 +5,15 @@ from datetime import UTC, datetime, timedelta
 
 from app.core.errors import ConversationNotFound, LlmUnavailable, RateLimitExceeded
 from app.core.metrics import CHAT_MESSAGES, CONTACT_REQUESTS
-from app.domain.conversation_ports import AwayModeStore, ConversationStore, SuggestionReader
 from app.domain.conversations import (
     PENDING_TIMEOUT_SECONDS,
     ConversationRecord,
     MessageRecord,
     status_after_client_message,
     status_after_manager_message,
-    status_after_open,
 )
 from app.domain.guardrails import is_callback_request, is_link_request
-from app.domain.ports import Assistant, CrmClient
+from app.domain.ports import Assistant, AwayModeStore, ConversationStore, CrmClient, SuggestionReader
 from app.schemas.analyze import AnalyzeRequest, AnalyzeResponse, DialogTurn
 from app.schemas.chat import (
     ChatMessageOut,
@@ -28,13 +26,16 @@ from app.schemas.chat import (
     MessageLink,
     SuggestionState,
 )
-from app.integrations.away.memory import InMemoryAwayMode
 from app.services.caching import normalize_text
 from app.services.links import build_links
 
 logger = logging.getLogger(__name__)
 
 HISTORY_LIMIT = 20
+HISTORY_FETCH = 40
+DETAIL_MESSAGES_LIMIT = 300
+POLL_MESSAGES_LIMIT = 300
+AUTO_REPLY_WINDOW = 30
 LIST_LIMIT = 100
 BACKLOG_HOURS = 24
 BACKLOG_LIMIT = 20
@@ -142,7 +143,7 @@ class ConversationService:
         suggestions: SuggestionReader,
         assistant: Assistant,
         crm: CrmClient,
-        away: AwayModeStore | None = None,
+        away: AwayModeStore,
     ) -> None:
         """Собирает сервис из зависимостей.
 
@@ -151,9 +152,9 @@ class ConversationService:
             suggestions: Чтение сохранённых подсказок.
             assistant: Ассистент, готовящий подсказку.
             crm: Клиент CRM.
-            away: Хранилище режима «менеджер ушёл» (по умолчанию — в памяти, выключен).
+            away: Хранилище режима «менеджер ушёл».
         """
-        self.away = away or InMemoryAwayMode()
+        self.away = away
         self.store = store
         self.suggestions = suggestions
         self.assistant = assistant
@@ -231,7 +232,7 @@ class ConversationService:
             conversation.id,
             "client",
             text.strip(),
-            status=status_after_client_message(conversation.status),
+            status=status_after_client_message,
             unread_delta=1,
             suggestion_state="pending",
         )
@@ -246,13 +247,13 @@ class ConversationService:
             after_id: Последний известный клиенту идентификатор сообщения.
 
         Returns:
-            Диалог и сообщения с большим идентификатором.
+            Диалог и сообщения с большим идентификатором (не больше ``POLL_MESSAGES_LIMIT`` последних).
 
         Raises:
             ConversationNotFound: Диалога с таким токеном нет.
         """
         conversation = await self._by_token(token)
-        return conversation, await self.store.list_messages(conversation.id, after_id)
+        return conversation, await self.store.list_messages(conversation.id, after_id, limit=POLL_MESSAGES_LIMIT)
 
     async def request_contact(self, token: str, payload: ContactRequestIn) -> ConversationRecord:
         """Принимает просьбу клиента связаться с ним и передаёт её менеджеру.
@@ -271,42 +272,52 @@ class ConversationService:
             ConversationNotFound: Диалога с таким токеном нет.
         """
         conversation = await self._by_token(token)
-        updated = await self.store.update(
-            conversation.id,
-            client_name=payload.name.strip(),
-            contact_method=payload.method,
-            contact_value=payload.value,
-            preferred_time=payload.preferred_time,
-            contact_comment=payload.comment,
-            contact_requested_at=datetime.now(UTC),
-            status="callback",
-        )
         when = f", удобное время: {payload.preferred_time}" if payload.preferred_time else ""
         await self.store.add_message(
             conversation.id,
             "system",
             f"Запрос на связь передан менеджеру. Способ: {CONTACT_LABELS[payload.method]}{when}.",
+            status="callback",
             unread_delta=1,
+            update_fields={
+                "client_name": payload.name.strip(),
+                "contact_method": payload.method,
+                "contact_value": payload.value,
+                "preferred_time": payload.preferred_time,
+                "contact_comment": payload.comment,
+                "contact_requested_at": datetime.now(UTC),
+            },
         )
         CONTACT_REQUESTS.labels(payload.method).inc()
-        await self.crm.add_note(
-            f"chat-{conversation.id}",
-            f"Клиент просит связаться (способ: {CONTACT_LABELS[payload.method]}). Контакты — в карточке диалога.",
-        )
-        return updated or conversation
+        try:
+            await self.crm.add_note(
+                f"chat-{conversation.id}",
+                f"Клиент просит связаться (способ: {CONTACT_LABELS[payload.method]}). Контакты — в карточке диалога.",
+            )
+        except Exception:
+            logger.exception("Не удалось передать в CRM заметку о запросе связи в диалоге %s", conversation.id)
+        return await self.store.get(conversation.id) or conversation
 
-    async def list_for_manager(self, status: str | None, query: str | None) -> ConversationListOut:
+    async def list_for_manager(
+        self, status: str | None, query: str | None, limit: int = LIST_LIMIT
+    ) -> ConversationListOut:
         """Возвращает входящие для менеджера.
 
         Args:
             status: Фильтр по статусу.
             query: Поиск по имени клиента и началу последнего сообщения.
+            limit: Сколько диалогов вернуть.
 
         Returns:
-            Список диалогов (требующие внимания выше) и счётчики по статусам.
+            Список диалогов (требующие внимания выше), счётчики по статусам и признак того, что есть ещё диалоги.
         """
-        rows, counts = await self.store.list_conversations(status, (query or "").strip() or None, LIST_LIMIT)
-        return ConversationListOut(items=[to_summary(row) for row in rows], counts=counts, total=sum(counts.values()))
+        rows, counts = await self.store.list_conversations(status, (query or "").strip() or None, limit + 1)
+        return ConversationListOut(
+            items=[to_summary(row) for row in rows[:limit]],
+            counts=counts,
+            total=sum(counts.values()),
+            has_more=len(rows) > limit,
+        )
 
     async def detail(self, conversation_id: int, expose_client_token: bool = False) -> ConversationDetail:
         """Возвращает диалог целиком и отмечает его прочитанным.
@@ -316,19 +327,17 @@ class ConversationService:
             expose_client_token: Добавить токен клиентского чата (нужен только демо-режиму).
 
         Returns:
-            История переписки, карточка клиента и подсказка ИИ к последнему сообщению клиента.
+            Последние ``DETAIL_MESSAGES_LIMIT`` сообщений переписки, карточка клиента и подсказка ИИ к последнему
+            сообщению клиента.
 
         Raises:
             ConversationNotFound: Диалога с таким идентификатором нет.
         """
-        conversation = await self._by_id(conversation_id)
-        opened_status = status_after_open(conversation.status)
-        if conversation.unread_by_manager or opened_status != conversation.status:
-            conversation = (
-                await self.store.update(conversation_id, unread_by_manager=0, status=opened_status) or conversation
-            )
+        conversation = await self.store.mark_opened(conversation_id)
+        if conversation is None:
+            raise ConversationNotFound("Диалог не найден")
 
-        messages = await self.store.list_messages(conversation_id)
+        messages = await self.store.list_messages(conversation_id, limit=DETAIL_MESSAGES_LIMIT)
         both, client_count = await self.store.count_messages(conversation_id)
         latest = await self.store.latest_client_message(conversation_id)
         state, suggestion = await self._suggestion_for(latest)
@@ -390,7 +399,7 @@ class ConversationService:
         Raises:
             ConversationNotFound: Диалога с таким идентификатором нет.
         """
-        conversation = await self._by_id(conversation_id)
+        await self._by_id(conversation_id)
         edited = False
         if suggestion_id is not None:
             suggestion = await self.suggestions.get(suggestion_id)
@@ -402,7 +411,7 @@ class ConversationService:
             conversation_id,
             "manager",
             text.strip(),
-            status=status_after_manager_message(conversation.status),
+            status=status_after_manager_message,
             suggestion_id=suggestion_id,
             edited=edited,
         )
@@ -474,7 +483,7 @@ class ConversationService:
         )
         if target is None or target.conversation_id != conversation_id or target.sender != "client":
             return None
-        earlier = [m for m in await self.store.list_messages(conversation_id) if m.id < target.id]
+        earlier = await self.store.list_messages(conversation_id, before_id=target.id, limit=HISTORY_FETCH)
         history = [DialogTurn(role=m.sender, text=m.text) for m in earlier if m.sender in {"client", "manager"}]
         request = AnalyzeRequest(
             message=target.text, history=history[-HISTORY_LIMIT:], lead_id=f"chat-{conversation_id}", refresh=refresh
@@ -550,11 +559,11 @@ class ConversationService:
         conversation = await self.store.get(conversation_id)
         if conversation is None:
             return
-        messages = await self.store.list_messages(conversation_id)
+        messages = await self.store.list_messages(conversation_id, limit=AUTO_REPLY_WINDOW)
         client_indexes = [i for i, m in enumerate(messages) if m.sender == "client"]
         target_index = next((i for i, m in enumerate(messages) if m.id == message_id), None)
         if target_index is None or target_index != client_indexes[-1]:
-            return  # клиент уже написал ещё раз: ответим на последнее сообщение
+            return  # клиент уже написал ещё раз (или сообщение вышло из окна): ответим на последнее сообщение
         if any(m.sender == "manager" for m in messages[target_index + 1 :]):
             return  # менеджер ответил сам, пока готовилась подсказка
         previous = next((m for m in reversed(messages[:target_index]) if m.sender != "system"), None)
@@ -587,7 +596,7 @@ class ConversationService:
             conversation_id,
             "manager",
             text,
-            status="new" if hot else status_after_manager_message(conversation.status),
+            status="new" if hot else status_after_manager_message,
             suggestion_id=suggestion_id,
             auto=True,
             links=build_links(response, is_link_request(messages[target_index].text), messages[target_index].text)
@@ -612,8 +621,8 @@ class ConversationService:
     async def answer_backlog(self) -> None:
         """Отвечает на сообщения клиентов, которые ждали менеджера, когда включили режим «Ассистент».
 
-        Берёт диалоги, где последнее сообщение — клиента, не старше суток; готовую подсказку использует повторно, чтобы не
-        тратить запросы к модели. Если менеджер вернулся, пока идёт разбор, останавливается.
+        Берёт диалоги, где последнее сообщение — клиента, не старше суток; готовую подсказку использует повторно,
+        чтобы не тратить запросы к модели. Если менеджер вернулся, пока идёт разбор, останавливается.
         """
         since = datetime.now(UTC) - timedelta(hours=BACKLOG_HOURS)
         for conversation_id, message_id in await self.store.unanswered_client_messages(since, BACKLOG_LIMIT):

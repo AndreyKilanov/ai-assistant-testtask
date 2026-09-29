@@ -4,9 +4,8 @@ import time
 
 from app.core.errors import LlmUnavailable, RateLimitExceeded
 from app.core.metrics import LATENCY, LLM_TOKENS, RATE_LIMITED, REQUESTS
-from app.domain.ports import Assistant
+from app.domain.ports import Assistant, LlmHealthTracker
 from app.schemas.analyze import AnalyzeRequest, AnalyzeResponse
-from app.services.llm_health import LlmHealth
 
 
 class MeteredAssistant:
@@ -19,7 +18,7 @@ class MeteredAssistant:
         health: Хранилище состояния модели (None — не вести).
     """
 
-    def __init__(self, inner: Assistant, health: LlmHealth | None = None) -> None:
+    def __init__(self, inner: Assistant, health: LlmHealthTracker | None = None) -> None:
         """Запоминает измеряемого ассистента.
 
         Args:
