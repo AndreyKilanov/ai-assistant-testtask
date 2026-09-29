@@ -1,8 +1,9 @@
 """Кеширование ответов ассистента: повторяющиеся вопросы не должны тратить запросы к модели.
 
 Кеш подключается декоратором поверх любого Assistant. Ключ строится по нормализованному вопросу и последнему обмену
-репликами, а не по всей истории: иначе у клиента, который повторяет один вопрос, история росла бы с каждым
-повтором и ключ каждый раз был бы новым. Одинаковые запросы, пришедшие одновременно, сливаются в один вызов модели.
+репликами. Более ранняя история входит в ключ отпечатком: ответ модели зависит от неё, и без отпечатка ответ,
+полученный в контексте одного клиента, достался бы другому с теми же двумя последними репликами. Одинаковые запросы,
+пришедшие одновременно, сливаются в один вызов модели.
 """
 
 import asyncio
@@ -13,7 +14,7 @@ import re
 import time
 
 from app.domain.ports import Assistant, ResponseCache
-from app.schemas.analyze import AnalyzeRequest, AnalyzeResponse, Usage
+from app.schemas.analyze import AnalyzeRequest, AnalyzeResponse, DialogTurn, Usage
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +34,27 @@ def normalize_text(text: str) -> str:
     return WHITESPACE_RE.sub(" ", text.casefold()).strip(TRAILING_PUNCTUATION)
 
 
+def _fingerprint(turns: list[DialogTurn]) -> str:
+    """Считает отпечаток реплик для ключа кеша.
+
+    Args:
+        turns: Реплики диалога.
+
+    Returns:
+        Пустая строка для пустого списка, иначе SHA-256 нормализованных реплик.
+    """
+    if not turns:
+        return ""
+    payload = json.dumps([[turn.role, normalize_text(turn.text)] for turn in turns], ensure_ascii=False)
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
 def build_cache_key(request: AnalyzeRequest, namespace: str, history_turns: int) -> str:
     """Строит ключ кеша по смыслу запроса.
 
-    В ключ входят режим, нормализованное сообщение и последние ``history_turns`` реплик; идентификатор сделки не
-    входит: ответ на один и тот же вопрос не зависит от того, из какой сделки он пришёл.
+    В ключ входят режим, нормализованное сообщение, последние ``history_turns`` реплик и отпечаток более ранней
+    истории (если она есть); идентификатор сделки не входит: ответ на один и тот же вопрос не зависит от того, из какой
+    сделки он пришёл.
 
     Args:
         request: Запрос на обработку обращения.
@@ -48,11 +65,13 @@ def build_cache_key(request: AnalyzeRequest, namespace: str, history_turns: int)
     Returns:
         Ключ вида ``analyze:<namespace>:<sha256>``.
     """
-    recent = request.history[-history_turns:] if history_turns > 0 else []
+    split = max(len(request.history) - history_turns, 0) if history_turns > 0 else len(request.history)
+    earlier, recent = request.history[:split], request.history[split:]
     canonical = {
         "mode": request.mode,
         "message": normalize_text(request.message),
         "history": [[turn.role, normalize_text(turn.text)] for turn in recent],
+        "earlier": _fingerprint(earlier),
     }
     digest = hashlib.sha256(json.dumps(canonical, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     return f"analyze:{namespace}:{digest}"
