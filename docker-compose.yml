@@ -41,6 +41,7 @@ services:
 
   embeddings:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    platform: linux/amd64
     command: ["--model-id", "${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}", "--port", "80"]
     volumes:
       - embeddings_cache:/data
