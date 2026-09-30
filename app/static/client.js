@@ -5,6 +5,7 @@ import {
   autosize,
   createSelect,
   formatNumber,
+  forbidEmoji,
   formatTime,
   h,
   icon,
@@ -467,6 +468,7 @@ els.message.addEventListener("keydown", (event) => {
     els.composer.requestSubmit();
   }
 });
+forbidEmoji(els.message);
 els.message.addEventListener("input", updateComposer);
 els.form.addEventListener("submit", submitContact);
 attachPhoneMask(els.value, phoneMaskActive);

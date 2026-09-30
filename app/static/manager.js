@@ -12,6 +12,7 @@ import {
   formatDateTime,
   formatNumber,
   formatSeconds,
+  forbidEmoji,
   formatTime,
   h,
   icon,
@@ -763,6 +764,7 @@ function suggestionBlocks(data, { interactive }) {
     refresh();
     setTimeout(refresh, 150);
   });
+  forbidEmoji(reply);
   reply.addEventListener("input", refresh);
   const copy = h("button", { type: "button", class: "ghost", onclick: () => copyText(reply.value) }, icon("copy"), "Копировать");
   const sendButton = interactive
@@ -996,6 +998,7 @@ els.message.addEventListener("keydown", (event) => {
     els.composer.requestSubmit();
   }
 });
+forbidEmoji(els.message);
 els.message.addEventListener("input", updateComposer);
 setChildren(els.send, icon("send"), "Отправить");
 

@@ -7,6 +7,7 @@ import asyncio
 import time
 
 from app.core.config import Settings
+from app.domain.emoji import strip_emoji
 from app.domain.generation import GenerationInput
 from app.domain.guardrails import (
     HIGH_RISK_UPSELL,
@@ -90,8 +91,9 @@ class AssistantService:
         reply = with_health_disclaimer(result.reply, any(hit.sensitive for hit in used_hits), request.message)
 
         allowed_urls = {hit.source_url for hit in hits} | site_link_urls()
-        reply = strip_foreign_urls(normalize_prices(reply), allowed_urls)
-        upsell_hint, warnings = strip_foreign_urls(normalize_prices(result.upsell_hint), allowed_urls), []
+        reply = strip_emoji(strip_foreign_urls(normalize_prices(reply), allowed_urls))
+        upsell_hint = strip_emoji(strip_foreign_urls(normalize_prices(result.upsell_hint), allowed_urls))
+        warnings: list[str] = []
         if high_risk:
             upsell_hint = HIGH_RISK_UPSELL
             warnings.append("Тема здоровья повышенного риска: подсказка по допродаже заменена стандартной.")

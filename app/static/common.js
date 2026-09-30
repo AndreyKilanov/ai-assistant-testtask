@@ -12,6 +12,24 @@ export const STATUS = {
 export const IS_MAC = /mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || "");
 export const MOD_LABEL = IS_MAC ? "⌘" : "Ctrl";
 export const ALT_LABEL = IS_MAC ? "⌥" : "Alt";
+/* Эмодзи и текстовые смайлики в чат не пропускаются (зеркало app/domain/emoji.py; сервер проверяет ещё раз). */
+const EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{231A}\u{231B}\u{23E9}-\u{23F3}\u{23F8}-\u{23FA}\u{203C}\u{2049}\u{25AA}\u{25AB}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{2934}\u{2935}\u{3030}\u{303D}\u{3297}\u{3299}\u{FE0F}\u{200D}\u{20E3}]|[:;=][-^']?[()DPpOo](?!\w)|\){3,}/gu;
+export const EMOJI_NOTICE = "Эмодзи и смайлики в чате не поддерживаются";
+
+/** Убирает из поля ввода эмодзи и смайлики (в том числе вставленные из буфера), сохраняя положение курсора. */
+export function forbidEmoji(field) {
+  field.addEventListener("input", (event) => {
+    if (event.isComposing) return;
+    const before = field.value;
+    const after = before.replace(EMOJI_RE, "");
+    if (after === before) return;
+    const caret = field.selectionStart - (before.length - after.length);
+    field.value = after;
+    field.setSelectionRange(Math.max(caret, 0), Math.max(caret, 0));
+    toast(EMOJI_NOTICE);
+  });
+}
+
 const MAC_KEYS = { Enter: "↩", Shift: "⇧", Ctrl: "⌃", Alt: "⌥", Esc: "⎋" };
 /** Подпись клавиши для текущей платформы: на Mac «↩» вместо «Enter», «⇧» вместо «Shift». */
 export const keyLabel = (name) => (IS_MAC ? (MAC_KEYS[name] ?? name) : name);

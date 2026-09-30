@@ -4,3 +4,4 @@
 
 Поля: analysis — краткое рассуждение; reply — ответ клиенту; upsell_hint — подсказка менеджеру; purchase_intent — none, interest или ready_to_buy; needs_escalation — true, если нужен менеджер или врач; used_entry_ids — всегда пустой список.
 Язык всех полей — русский.
+Никаких эмодзи и смайликов, ни картинками, ни текстом («:)», «)))»): ни в reply, ни в upsell_hint. Тон передавай словами.

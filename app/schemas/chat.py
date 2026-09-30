@@ -2,16 +2,37 @@
 
 import re
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AfterValidator, BaseModel, Field, model_validator
 
+from app.domain.emoji import EMOJI_FORBIDDEN_MESSAGE, has_emoji
 from app.schemas.analyze import AnalyzeResponse
 
 ConversationStatus = Literal["new", "in_progress", "waiting_client", "callback", "closed"]
 ContactMethod = Literal["phone", "telegram", "whatsapp", "max", "email", "chat"]
 Sender = Literal["client", "manager", "system"]
 SuggestionState = Literal["none", "pending", "ready", "failed"]
+
+
+def _reject_emoji(text: str) -> str:
+    """Отклоняет текст с эмодзи или смайликами.
+
+    Args:
+        text: Текст сообщения.
+
+    Returns:
+        Тот же текст, если смайлов в нём нет.
+
+    Raises:
+        ValueError: В тексте есть эмодзи или смайлики.
+    """
+    if has_emoji(text):
+        raise ValueError(EMOJI_FORBIDDEN_MESSAGE)
+    return text
+
+
+NoEmoji = AfterValidator(_reject_emoji)
 
 PHONE_MIN_DIGITS = 10
 PHONE_MAX_DIGITS = 15
@@ -62,7 +83,7 @@ class ClientStartIn(BaseModel):
     """
 
     client_name: str | None = Field(default=None, min_length=1, max_length=100)
-    text: str | None = Field(default=None, min_length=1, max_length=2000)
+    text: Annotated[str, NoEmoji] | None = Field(default=None, min_length=1, max_length=2000)
 
 
 class ClientSessionOut(BaseModel):
@@ -90,7 +111,7 @@ class ClientMessageIn(BaseModel):
         text: Текст сообщения.
     """
 
-    text: str = Field(min_length=1, max_length=2000)
+    text: Annotated[str, NoEmoji] = Field(min_length=1, max_length=2000)
 
 
 class ContactRequestIn(BaseModel):
@@ -274,7 +295,7 @@ class ManagerMessageIn(BaseModel):
         suggestion_id: Подсказка ИИ, на которой основан ответ (нужна, чтобы отследить правки).
     """
 
-    text: str = Field(min_length=1, max_length=2000)
+    text: Annotated[str, NoEmoji] = Field(min_length=1, max_length=2000)
     suggestion_id: int | None = Field(default=None, gt=0)
 
 
