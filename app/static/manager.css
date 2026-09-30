@@ -18,7 +18,7 @@ body.resizing iframe { pointer-events: none; }
 
 /* Входящие */
 .search { padding: 10px 14px 6px; }
-.filters { display: flex; gap: 6px; padding: 4px 14px 10px; overflow-x: auto; flex: none; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 14px 10px; flex: none; }
 .filters button { flex: none; cursor: pointer; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); border-radius: 999px; padding: 4px 11px; font-size: 13px; font-weight: 500; display: inline-flex; gap: 6px; align-items: center; }
 .filters button[aria-pressed="true"] { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
 .filters .n { font-variant-numeric: tabular-nums; opacity: 0.75; }
@@ -113,3 +113,18 @@ body.resizing iframe { pointer-events: none; }
 .manager-page .topbar { display: grid; grid-template-columns: 1fr auto 1fr; }
 .manager-page .topbar-right { justify-self: end; }
 @media (max-width: 1240px) { .manager-page .topbar { display: flex; } }
+
+/* Десктоп: шапка любой высоты, консоль занимает остаток окна, а плавающий переключатель демо не перекрывает панели */
+@media (min-width: 1241px) {
+  body.manager-page #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  body.manager-page.has-demo #app { padding-bottom: 72px; }
+  body.manager-page .console { flex: 1; height: auto; min-height: 0; }
+  body.manager-page .console .inbox { max-height: none; }
+  body.manager-page .gate-error { flex: none; }
+}
+/* На средних экранах статистика с моделью не помещаются в боковые колонки: шапка в одну строку, переключатель рядом с брендом */
+@media (min-width: 1241px) and (max-width: 1760px) {
+  .manager-page .topbar { grid-template-columns: auto auto minmax(0, 1fr); gap: 24px; }
+  .manager-page .topbar-right { flex-wrap: nowrap; min-width: 0; }
+  .manager-page .stats { flex-wrap: nowrap; }
+}
