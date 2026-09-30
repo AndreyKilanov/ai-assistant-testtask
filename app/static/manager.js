@@ -1,9 +1,12 @@
 import {
   CONTACT_METHODS,
+  IS_MAC,
+  MOD_LABEL,
   STATUS,
   ApiError,
   api,
   autosize,
+  combo,
   copyText,
   createSelect,
   formatDateTime,
@@ -13,6 +16,7 @@ import {
   h,
   icon,
   initials,
+  keyLabel,
   poll,
   relativeTime,
   setChildren,
@@ -787,7 +791,7 @@ function suggestionBlocks(data, { interactive }) {
     });
   }
   return [
-    h("div", { class: "block reply" }, h("h3", {}, "Ответ клиенту", h("span", { class: "right" }, edited, count)), reply, h("div", { class: "actions" }, sendButton, copy, undo, interactive && h("span", { class: "hint" }, h("kbd", { text: "Ctrl" }), " + ", h("kbd", { text: "Enter" })))),
+    h("div", { class: "block reply" }, h("h3", {}, "Ответ клиенту", h("span", { class: "right" }, edited, count)), reply, h("div", { class: "actions" }, sendButton, copy, undo, interactive && h("span", { class: "hint" }, h("kbd", { text: MOD_LABEL }), " + ", h("kbd", { text: keyLabel("Enter") })))),
     h("div", { class: "block upsell" }, h("h3", {}, "Подсказка по допродаже", h("span", { class: "right" }, icon("lock"), "только для менеджера")), h("p", { text: data.upsell_hint })),
   ];
 }
@@ -948,6 +952,30 @@ function updateComposer() {
 
 els.awayOff.addEventListener("click", () => setAway(false));
 els.awayOn.addEventListener("click", () => setAway(true));
+/* Горячие клавиши: ⌘K (Ctrl+K) — поиск, ⌥↑ / ⌥↓ — предыдущий и следующий диалог в списке. */
+els.search.title = `Поиск · ${combo(MOD_LABEL, "K")}`;
+document.addEventListener("keydown", (event) => {
+  if (event.isComposing) return;
+  const mod = IS_MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  if (mod && !event.altKey && !event.shiftKey && event.code === "KeyK") {
+    event.preventDefault();
+    els.search.focus();
+    els.search.select();
+    return;
+  }
+  if (event.altKey && !mod && !event.shiftKey && (event.code === "ArrowUp" || event.code === "ArrowDown")) {
+    const items = state.list?.items ?? [];
+    if (!items.length) return;
+    event.preventDefault();
+    const index = items.findIndex((item) => item.id === state.selectedId);
+    const step = event.code === "ArrowDown" ? 1 : -1;
+    const next = items[index === -1 ? (step === 1 ? 0 : items.length - 1) : index + step];
+    if (next) selectConversation(next.id);
+  }
+});
+els.search.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") els.search.blur();
+});
 els.search.addEventListener("input", () => {
   state.query = els.search.value.trim();
   state.listLimit = LIST_PAGE;

@@ -8,6 +8,18 @@ export const STATUS = {
   closed: { label: "Закрыт", tone: "muted" },
 };
 
+/* Платформа и подписи клавиш: на Mac ⌘ и ⌥, на остальных Ctrl и Alt. */
+export const IS_MAC = /mac|iphone|ipad/i.test(navigator.userAgentData?.platform || navigator.platform || "");
+export const MOD_LABEL = IS_MAC ? "⌘" : "Ctrl";
+export const ALT_LABEL = IS_MAC ? "⌥" : "Alt";
+const MAC_KEYS = { Enter: "↩", Shift: "⇧", Ctrl: "⌃", Alt: "⌥", Esc: "⎋" };
+/** Подпись клавиши для текущей платформы: на Mac «↩» вместо «Enter», «⇧» вместо «Shift». */
+export const keyLabel = (name) => (IS_MAC ? (MAC_KEYS[name] ?? name) : name);
+// Подсказки, написанные прямо в HTML (<kbd>Enter</kbd>), подменяем один раз при загрузке модуля.
+if (IS_MAC) document.querySelectorAll("kbd").forEach((node) => (node.textContent = keyLabel(node.textContent.trim())));
+/** Склеивает подпись сочетания: «⌥1» на Mac, «Alt+1» на остальных. */
+export const combo = (modifier, key) => (IS_MAC ? `${modifier}${key}` : `${modifier}+${key}`);
+
 export const CONTACT_METHODS = {
   phone: { label: "Телефон", field: "Номер телефона", placeholder: "+7 (900) 000-00-00", inputmode: "tel" },
   telegram: { label: "Telegram", field: "Ник или номер в Telegram", placeholder: "@username или +7 (900) 000-00-00", inputmode: "text" },

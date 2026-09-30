@@ -1,5 +1,5 @@
 /* Демо-переключатель экранов «Клиент | Менеджер». Показывается, только если на сервере включён DEMO_MODE. */
-import { h, icon, setChildren } from "/static/common.js";
+import { ALT_LABEL, combo, h, icon, setChildren } from "/static/common.js";
 
 const VIEWS = [
   { id: "client", path: "/", label: "Клиент", glyph: "user", key: "1" },
@@ -28,11 +28,11 @@ function mount() {
           href: view.path,
           class: "demo-link",
           "aria-current": view.id === current ? "page" : null,
-          title: `${view.label} · Alt+${view.key}`,
+          title: `${view.label} · ${combo(ALT_LABEL, view.key)}`,
         },
         icon(view.glyph),
         h("span", { text: view.label }),
-        h("kbd", { text: `Alt+${view.key}` }),
+        h("kbd", { text: combo(ALT_LABEL, view.key) }),
       ),
     ),
   );
@@ -40,7 +40,8 @@ function mount() {
   document.body.classList.add("has-demo");
   document.addEventListener("keydown", (event) => {
     if (!event.altKey || event.ctrlKey || event.metaKey) return;
-    const target = VIEWS.find((view) => view.key === event.key && view.id !== current);
+    // На Mac Option+цифра меняет event.key на другой символ, поэтому сверяем физическую клавишу.
+    const target = VIEWS.find((view) => (event.code === `Digit${view.key}` || event.code === `Numpad${view.key}`) && view.id !== current);
     if (target) {
       event.preventDefault();
       location.assign(target.path);
